@@ -1,7 +1,6 @@
 package com.mobantigravity.launcher
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -24,15 +23,7 @@ class GemAutoTypeService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        serviceInfo = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = AccessibilityServiceInfo.FLAG_DEFAULT or
-                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
-            packageNames = arrayOf(TARGET_PACKAGE)
-            notificationTimeout = 100
-        }
+        // Configuration comes from @xml/accessibility_service_config.
         inspect()
     }
 
