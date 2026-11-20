@@ -34,6 +34,10 @@ class LauncherActivity : Activity() {
         private const val GEM_CMD = "gem"
         private const val SETUP_CMD = "bash /sdcard/Download/MobAntigravity/setup.sh"
         private const val DOWNLOAD_DIR = "Download/MobAntigravity"
+        private const val BASE_URL =
+            "https://github.com/hemantkumar30590-tech/Mobantigravity/releases/download/latest-apk/"
+        private const val URL_ANTIGEM = BASE_URL + "antigem.apk"
+        private const val URL_X11 = BASE_URL + "x11.apk"
         private const val X11_FLAGS = Intent.FLAG_ACTIVITY_NEW_TASK or
             Intent.FLAG_ACTIVITY_CLEAR_TOP or
             Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
@@ -87,13 +91,17 @@ class LauncherActivity : Activity() {
         addSpacer(10)
 
         if (!antiInstalled) {
-            addButton(root, "1.  Install AntiGem", "#3B82F6") { installApkAsset("antigem.apk") }
+            addButton(root, "1.  Install AntiGem", "#3B82F6") {
+                downloadAndInstall("antigem.apk", URL_ANTIGEM)
+            }
             addHint("Bundled APK. Tap Install / Allow unknown apps when Android asks.")
             addSpacer(10)
         }
 
         if (!x11Installed) {
-            addButton(root, "2.  Install Termux-X11", "#8B5CF6") { installApkAsset("x11.apk") }
+            addButton(root, "2.  Install Termux-X11", "#8B5CF6") {
+                downloadAndInstall("x11.apk", URL_X11)
+            }
             addHint("Bundled APK. This provides the X11 window and Gboard bridge.")
             addSpacer(10)
         }
@@ -210,13 +218,24 @@ class LauncherActivity : Activity() {
         false
     }
 
-    private fun installApkAsset(assetName: String) {
-        try {
-            val dir = File(filesDir, "apks").apply { mkdirs() }
-            val apk = File(dir, assetName)
-            assets.open("apks/$assetName").use { input ->
-                FileOutputStream(apk).use { output -> input.copyTo(output) }
+    private fun downloadAndInstall(fileName: String, url: String) {
+        toast("Downloading $fileName...")
+        Thread {
+            try {
+                val dir = File(filesDir, "apks").apply { mkdirs() }
+                val apk = File(dir, fileName)
+                java.net.URL(url).openStream().use { input ->
+                    FileOutputStream(apk).use { output -> input.copyTo(output) }
+                }
+                runOnUiThread { installApkFile(apk) }
+            } catch (e: Exception) {
+                runOnUiThread { toast("Download failed: ${e.message ?: "unknown error"}") }
             }
+        }.start()
+    }
+
+    private fun installApkFile(apk: File) {
+        try {
             val uri: Uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apk)
             val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")

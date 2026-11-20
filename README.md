@@ -9,7 +9,7 @@ Android does not allow an app to silently install another app or execute shell c
 ## What is included
 
 - `app/` — Kotlin Android launcher with first-run setup wizard (`com.mobantigravity.launcher`)
-- `app/src/main/assets/apks/` — bundled AntiGem and Termux-X11 APKs for the guided installer
+- GitHub Release assets `antigem.apk` and `x11.apk` — downloaded by the guided installer at runtime
 - `app/src/main/assets/scripts/` — tested runtime scripts extracted to `Download/MobAntigravity/`:
   - `gem` — starts X11, Antigravity and the smart keyboard bridge
   - `gem-ime` / `gem-ime-server` / `gem-ime-inject` — keyboard-on-focus bridge and CDP UI injection

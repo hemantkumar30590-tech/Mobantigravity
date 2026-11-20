@@ -2,7 +2,7 @@
 
 ## First-run wizard
 
-The APK now bundles `AntiGem` and `Termux-X11` installers in `assets/apks/`. On first launch the wizard checks both packages and offers install buttons. It then extracts `setup.sh` and the helper scripts into `Download/MobAntigravity/` and copies this command:
+On first launch the wizard checks both packages and offers install buttons. The installers are hosted as GitHub Release assets (`antigem.apk`, `x11.apk`) and downloaded on demand, keeping the launcher APK small. The wizard then extracts `setup.sh` and the helper scripts into `Download/MobAntigravity/` and copies this command:
 
 ```sh
 bash /sdcard/Download/MobAntigravity/setup.sh
