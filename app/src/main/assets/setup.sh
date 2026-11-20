@@ -40,7 +40,12 @@ am broadcast -a "$P" -n "$R" --es displayResolutionMode custom >/dev/null 2>&1 |
 am broadcast -a "$P" -n "$R" --es displayResolutionCustom 1080x2161 >/dev/null 2>&1 || true
 am broadcast -a "$P" -n "$R" --es displayStretch false >/dev/null 2>&1 || true
 am broadcast -a "$P" -n "$R" --es adjustHeightForEK false >/dev/null 2>&1 || true
+am broadcast -a "$P" -n "$R" --es showIMEWhileExternalConnected true >/dev/null 2>&1 || true
+
+echo "6/6  Starting Antigravity GUI..."
+if ! pgrep -f '/opt/antigravity/antigravity' >/dev/null 2>&1; then
+    nohup "$PREFIX/bin/gem" >/dev/null 2>&1 < /dev/null &
+fi
 
 echo ""
 echo "Setup complete. Go back to MobAntigravity and tap 'Open Antigravity GUI'."
-echo "If the GUI is not running yet, paste: gem"

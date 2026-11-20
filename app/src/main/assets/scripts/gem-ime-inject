@@ -39,8 +39,8 @@ JS = r"""
   }, true);
   setInterval(pinScroll, 300);
 
-  if (window.__gemImeFocusHook) return;
-  window.__gemImeFocusHook = true;
+  if (window.__gemImeFocusHookVersion === 2) return;
+  window.__gemImeFocusHookVersion = 2;
 
   // Events from shadow DOM are retargeted at document level - inspect composedPath.
   const detail = (e) => (e.composedPath ? e.composedPath()[0] : e.target);
@@ -56,15 +56,17 @@ JS = r"""
   document.addEventListener('focusin', (e) => {
     if (isText(detail(e))) ping(true);
   }, true);
-  document.addEventListener('mousedown', (e) => {
-    if (isText(detail(e))) setTimeout(() => ping(true), 60);
-  }, true);
-  document.addEventListener('touchstart', (e) => {
-    if (isText(detail(e))) setTimeout(() => ping(true), 60);
-  }, true);
-  document.addEventListener('focusout', () => {
-    setTimeout(() => { if (!isText(document.activeElement)) ping(false); }, 150);
-  }, true);
+  // Hide only on a deliberate tap outside a text field. Transient React/Electron
+  // blur events must not close Gboard while the user is still typing.
+  const onPointer = (e) => {
+    if (isText(detail(e))) {
+      ping(true);
+    } else {
+      setTimeout(() => { if (!isText(document.activeElement)) ping(false); }, 200);
+    }
+  };
+  document.addEventListener('mousedown', onPointer, true);
+  document.addEventListener('touchstart', onPointer, true);
 })();
 """
 

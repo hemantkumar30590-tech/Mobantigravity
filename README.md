@@ -30,8 +30,9 @@ Latest APK: <https://github.com/hemantkumar30590-tech/Mobantigravity/releases/la
    ```sh
    bash /sdcard/Download/MobAntigravity/setup.sh
    ```
-5. The app detects `Setup complete` and shows the launcher. If Accessibility is unavailable, the manual buttons remain as a fallback.
-6. From then on, **Open Antigravity GUI** launches directly.
+5. `setup.sh` also starts the GUI and enables Gboard-on-focus: the CDP focus hook opens Gboard when a text field is tapped and hides it when you tap outside. No BACK workaround is needed.
+6. The app detects `Setup complete` and shows the launcher. If Accessibility is unavailable, the manual buttons remain as a fallback.
+7. From then on, **Open Antigravity GUI** launches directly.
 
 See [docs/DEVICE_SETUP.md](docs/DEVICE_SETUP.md) for the tuned resolution/keyboard settings.
 
