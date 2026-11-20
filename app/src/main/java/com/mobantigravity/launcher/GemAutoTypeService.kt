@@ -1,10 +1,21 @@
 package com.mobantigravity.launcher
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.util.ArrayDeque
 
 class GemAutoTypeService : AccessibilityService() {
@@ -15,24 +26,199 @@ class GemAutoTypeService : AccessibilityService() {
         const val KEY_COMMAND = "autotype_command"
         const val KEY_SETUP_DONE = "setup_done"
         private const val TARGET_PACKAGE = "ai.antigem"
+        private const val X11_PACKAGE = "ai.antigem.x11"
         private const val SETUP_CMD = "bash /sdcard/Download/MobAntigravity/setup.sh"
+        private const val ACTION_IME = "com.mobantigravity.launcher.ACTION_IME"
+        private const val BRIDGE_PORT = 8898
     }
 
     private var lastAttempt = 0L
     private var doneNotified = false
+    @Volatile private var currentPackage: String = ""
+    @Volatile private var isImeShown: Boolean = false
+    @Volatile private var isX11Focused: Boolean = false
+    @Volatile private var lastToggleTime: Long = 0L
+
+    private var serverSocket: ServerSocket? = null
+    private var serverThread: Thread? = null
+    private var imeReceiver: BroadcastReceiver? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        // Configuration comes from @xml/accessibility_service_config.
+        startLocalServer()
+        registerImeReceiver()
         inspect()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        stopLocalServer()
+        unregisterImeReceiver()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        inspect()
+        val pkg = event?.packageName?.toString() ?: rootInActiveWindow?.packageName?.toString() ?: ""
+        if (pkg.isNotEmpty()) {
+            currentPackage = pkg
+            isX11Focused = (pkg == X11_PACKAGE)
+        }
+        checkImeState()
+        if (pkg == TARGET_PACKAGE) {
+            inspect()
+        }
     }
 
     override fun onInterrupt() {
         doneNotified = false
+    }
+
+    private fun checkImeState(): Boolean {
+        return try {
+            val wins = windows
+            val ime = wins != null && wins.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            isImeShown = ime
+            ime
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun registerImeReceiver() {
+        if (imeReceiver != null) return
+        imeReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val action = intent?.getStringExtra("action") ?: "toggle"
+                handleImeAction(action)
+            }
+        }
+        val filter = IntentFilter(ACTION_IME)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(imeReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(imeReceiver, filter)
+        }
+    }
+
+    private fun unregisterImeReceiver() {
+        imeReceiver?.let {
+            try { unregisterReceiver(it) } catch (e: Exception) {}
+            imeReceiver = null
+        }
+    }
+
+    @Synchronized
+    fun handleImeAction(action: String): Pair<String, String> {
+        checkImeState()
+        val now = System.currentTimeMillis()
+        if (now - lastToggleTime < 500L) {
+            return "200 OK" to "{\"ok\":true,\"debounced\":true,\"imeShown\":$isImeShown}"
+        }
+
+        return when (action.lowercase()) {
+            "state" -> {
+                "200 OK" to "{\"ok\":true,\"imeShown\":$isImeShown,\"x11Focused\":$isX11Focused,\"package\":\"$currentPackage\"}"
+            }
+            "on" -> {
+                if (isX11Focused && !isImeShown) {
+                    lastToggleTime = now
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    isImeShown = true
+                    "200 OK" to "{\"ok\":true,\"action\":\"shown\",\"imeShown\":true}"
+                } else {
+                    "200 OK" to "{\"ok\":true,\"action\":\"none\",\"imeShown\":$isImeShown}"
+                }
+            }
+            "off" -> {
+                if (isImeShown) {
+                    lastToggleTime = now
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    isImeShown = false
+                    "200 OK" to "{\"ok\":true,\"action\":\"hidden\",\"imeShown\":false}"
+                } else {
+                    "200 OK" to "{\"ok\":true,\"action\":\"none\",\"imeShown\":$isImeShown}"
+                }
+            }
+            "toggle", "back" -> {
+                lastToggleTime = now
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                "200 OK" to "{\"ok\":true,\"action\":\"toggled\"}"
+            }
+            else -> {
+                "400 Bad Request" to "{\"ok\":false,\"error\":\"unknown action $action\"}"
+            }
+        }
+    }
+
+    private fun startLocalServer() {
+        if (serverSocket != null) return
+        serverThread = Thread {
+            try {
+                val socket = ServerSocket(BRIDGE_PORT, 20, InetAddress.getByName("127.0.0.1"))
+                serverSocket = socket
+                while (!socket.isClosed) {
+                    val client = socket.accept()
+                    handleClient(client)
+                }
+            } catch (e: Exception) {
+                // Server closed
+            }
+        }.apply {
+            isDaemon = true
+            name = "MobImeBridgeServer"
+            start()
+        }
+    }
+
+    private fun stopLocalServer() {
+        try {
+            serverSocket?.close()
+            serverSocket = null
+        } catch (e: Exception) {}
+        serverThread?.interrupt()
+        serverThread = null
+    }
+
+    private fun handleClient(client: Socket) {
+        Thread {
+            try {
+                client.soTimeout = 2000
+                val reader = BufferedReader(InputStreamReader(client.getInputStream()))
+                val line = reader.readLine() ?: return@Thread
+                val parts = line.split(" ")
+                val path = if (parts.size > 1) parts[1] else "/"
+
+                val action = when {
+                    path.contains("/ime/state") -> "state"
+                    path.contains("/ime/on") -> "on"
+                    path.contains("/ime/off") -> "off"
+                    path.contains("/ime/toggle") -> "toggle"
+                    path.contains("/ime/back") -> "back"
+                    else -> "unknown"
+                }
+
+                val (status, body) = if (action == "unknown") {
+                    "404 Not Found" to "{\"ok\":false,\"error\":\"not found\"}"
+                } else {
+                    handleImeAction(action)
+                }
+
+                val bodyBytes = body.toByteArray(Charsets.UTF_8)
+                val response = "HTTP/1.1 $status\r\n" +
+                    "Content-Type: application/json; charset=utf-8\r\n" +
+                    "Content-Length: ${bodyBytes.size}\r\n" +
+                    "Access-Control-Allow-Origin: *\r\n" +
+                    "Connection: close\r\n\r\n"
+
+                val out = client.getOutputStream()
+                out.write(response.toByteArray(Charsets.UTF_8))
+                out.write(bodyBytes)
+                out.flush()
+            } catch (e: Exception) {
+                // Client error
+            } finally {
+                try { client.close() } catch (e: Exception) {}
+            }
+        }.start()
     }
 
     private fun inspect() {

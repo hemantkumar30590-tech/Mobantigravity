@@ -32,13 +32,21 @@ case "${1:-status}" in
         echo "Smart Gboard stopped"
         ;;
     pause)
-        timeout 8 adb shell input keyevent 4 >/dev/null 2>&1 || true
+        if ! curl -s --max-time 1 "http://127.0.0.1:8898/ime/off" >/dev/null 2>&1; then
+            timeout 3 adb shell input keyevent 4 >/dev/null 2>&1 || true
+        fi
         echo "Keyboard hidden"
         ;;
     status)
         if pgrep -f '^python3 .*gem-ime-server' >/dev/null 2>&1; then echo "Bridge: RUNNING"; else echo "Bridge: STOPPED"; fi
         if pgrep -f '^bash .*gem-ime-assist' >/dev/null 2>&1; then echo "Legacy assistant: RUNNING (stop it)"; fi
-        timeout 8 adb shell 'dumpsys input_method | grep -m1 -o "mInputShown=[a-z]*"' 2>/dev/null || true
+        native_stat=$(curl -s --max-time 1 "http://127.0.0.1:8898/ime/state" 2>/dev/null || echo "")
+        if [ -n "$native_stat" ]; then
+            echo "Native Accessibility Bridge: CONNECTED ($native_stat)"
+        else
+            echo "Native Accessibility Bridge: OFFLINE (Enable MobAntigravity in Accessibility)"
+            timeout 3 adb shell 'dumpsys input_method | grep -m1 -o "mInputShown=[a-z]*"' 2>/dev/null || true
+        fi
         ;;
     *)
         echo "Usage: gem-ime [start|stop|pause|status]"

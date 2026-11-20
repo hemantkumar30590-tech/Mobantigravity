@@ -154,6 +154,7 @@ am broadcast -a "$P" -n "$R" --es displayResolutionCustom 1080x2161 >/dev/null 2
 am broadcast -a "$P" -n "$R" --es displayStretch false >/dev/null 2>&1 || true
 am broadcast -a "$P" -n "$R" --es adjustHeightForEK false >/dev/null 2>&1 || true
 am broadcast -a "$P" -n "$R" --es showIMEWhileExternalConnected true >/dev/null 2>&1 || true
+am broadcast -a "$P" -n "$R" --es backButtonAction "toggle soft keyboard" >/dev/null 2>&1 || true
 
 echo "6/6  Starting Antigravity GUI..."
 if ! pgrep -f '/opt/antigravity/antigravity' >/dev/null 2>&1; then

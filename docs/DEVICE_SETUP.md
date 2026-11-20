@@ -55,11 +55,17 @@ MobAntigravity automatically selects the best GPU rendering pipeline for the pho
    - Force hardware acceleration: `gem --gpu`
    - Force software rendering: `gem --software`
 
-## Keyboard bridge
+## Keyboard bridge (Zero ADB)
 
-`gem-ime-inject` hooks text-field focus in every CDP page and calls `127.0.0.1:8899/ime/on`. `gem-ime-server` toggles Gboard with `input keyevent 4`, but only when X11 has focus and with a 1-second debounce, so repeated focus events cannot close the X11 activity.
+MobAntigravity includes a 100% native, zero-ADB keyboard focus bridge:
 
-Body scroll is pinned to `0`, keeping the top bar and sidebar visible when the keyboard opens.
+1. `gem-ime-inject` hooks text-field focus in every Electron/CDP page and sends HTTP requests (`127.0.0.1:8899/ime/on` and `/ime/off`).
+2. `gem-ime-server` communicates directly with MobAntigravity's native Accessibility Service (`GemAutoTypeService` on `127.0.0.1:8898`):
+   - Inspects active window and soft keyboard (`TYPE_INPUT_METHOD`) state natively.
+   - Toggles soft keyboard via `performGlobalAction(GLOBAL_ACTION_BACK)` when X11 is focused.
+   - **Requires zero ADB, zero PC setup, and zero wireless debugging**.
+3. If Accessibility is temporarily unavailable, it automatically falls back to ADB (`adb shell input keyevent 4`).
+4. Body scroll is pinned to `0`, keeping the top bar and sidebar visible when the keyboard opens.
 
 ## Launch
 

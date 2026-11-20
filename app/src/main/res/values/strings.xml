@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">MobAntigravity</string>
-    <string name="accessibility_description">Types the one-time setup command into the AntiGem terminal and detects when setup finishes.</string>
+    <string name="accessibility_description">Automates setup typing and provides zero-ADB keyboard focus management for Antigravity.</string>
 </resources>
