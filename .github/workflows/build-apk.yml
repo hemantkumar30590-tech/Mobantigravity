@@ -66,9 +66,9 @@ jobs:
           body: |
             One-tap Kotlin launcher for Antigravity 2.0 on Android via AntiGem/PRoot/X11.
 
-            - Guided first-run setup with bundled AntiGem and Termux-X11 APKs
-            - One pasted command sets up PRoot, Debian and Antigravity core
-            - Opens the X11 GUI directly after setup
+            - 1-tap guided setup downloads and installs AntiGem + Termux-X11
+            - Auto-types the one-time setup command via Accessibility
+            - Detects "Setup complete" and opens the X11 GUI directly
             - Built by GitHub Actions from this repository
           files: MobAntigravity-debug.apk
           make_latest: true

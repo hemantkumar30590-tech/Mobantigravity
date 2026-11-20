@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">MobAntigravity</string>
+    <string name="accessibility_description">Types the one-time setup command into the AntiGem terminal and detects when setup finishes.</string>
 </resources>

@@ -2,13 +2,13 @@
 
 ## First-run wizard
 
-On first launch the wizard checks both packages and offers install buttons. The installers are hosted as GitHub Release assets (`antigem.apk`, `x11.apk`) and downloaded on demand, keeping the launcher APK small. The wizard then extracts `setup.sh` and the helper scripts into `Download/MobAntigravity/` and copies this command:
+On first launch, **1-Tap Install & Setup** downloads the installers from GitHub Release assets (`antigem.apk`, `x11.apk`), launches the Android install prompts, extracts `setup.sh` and the helper scripts into `Download/MobAntigravity/`, opens the AntiGem terminal, and types this command automatically after a one-time Accessibility toggle:
 
 ```sh
 bash /sdcard/Download/MobAntigravity/setup.sh
 ```
 
-Paste it once in the AntiGem terminal. That script installs PRoot/Debian/Antigravity core, copies the fixed scripts into `$PREFIX/bin`, patches the VA39 binary and applies the tuned X11 preferences. Android only allows silent installation for system apps, so the two install confirmations are expected.
+That script installs PRoot/Debian/Antigravity core, copies the fixed scripts into `$PREFIX/bin`, patches the VA39 binary and applies the tuned X11 preferences. The Accessibility service watches only `ai.antigem`, sends the command to the focused terminal input, and marks setup complete when `Setup complete` appears. Android only allows silent installation for system apps, so the two install confirmations are expected; manual buttons remain available as a fallback.
 
 These are the settings used for the tested phone (`1080x2400`, density `480`).
 

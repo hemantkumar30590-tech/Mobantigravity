@@ -2,9 +2,9 @@
 
 One-tap Kotlin launcher for **Google Antigravity 2.0 on Android** running through **AntiGem + Debian PRoot + Termux-X11**.
 
-The app includes a **guided first-run setup**: it installs the bundled AntiGem and Termux-X11 APKs with Android's normal install prompts, extracts the helper scripts and a one-command setup script to `Download/MobAntigravity`, and then walks the user through a single paste in the AntiGem terminal. After that, the launcher opens the X11 GUI directly.
+The app includes a **one-tap guided setup**: one button downloads the AntiGem and Termux-X11 installers, launches Android's install prompts, extracts the helper scripts and `setup.sh` to `Download/MobAntigravity`, opens the AntiGem terminal, and (after a one-time Accessibility toggle) types the setup command itself. It also detects the `Setup complete` output and returns to the launcher automatically. After that, the launcher opens the X11 GUI directly.
 
-Android does not allow an app to silently install another app or execute shell commands inside another app's sandbox, so the two install confirmations and one pasted command are unavoidable. Everything else is automated.
+Android does not allow an app to silently install another app or execute shell commands inside another app's sandbox, so the two install confirmations and the Accessibility toggle are unavoidable. Everything else is automated — the user never types or pastes anything.
 
 ## What is included
 
@@ -24,15 +24,14 @@ Latest APK: <https://github.com/hemantkumar30590-tech/Mobantigravity/releases/la
 ## First run on a new phone
 
 1. Install `MobAntigravity-debug.apk`.
-2. Open it. The wizard detects missing apps and offers:
-   - **Install AntiGem** (bundled APK)
-   - **Install Termux-X11** (bundled APK)
-3. Tap **Copy setup command**, then **Open AntiGem terminal**, paste once and press Enter:
+2. Open it and tap **1-Tap Install & Setup**.
+3. Confirm the two Android install prompts for AntiGem and Termux-X11.
+4. When asked, enable **MobAntigravity** in Android Accessibility once — the app then types this command into the AntiGem terminal automatically:
    ```sh
    bash /sdcard/Download/MobAntigravity/setup.sh
    ```
-4. Return to MobAntigravity and tap **I finished setup**.
-5. From then on, **Open Antigravity GUI** launches directly.
+5. The app detects `Setup complete` and shows the launcher. If Accessibility is unavailable, the manual buttons remain as a fallback.
+6. From then on, **Open Antigravity GUI** launches directly.
 
 See [docs/DEVICE_SETUP.md](docs/DEVICE_SETUP.md) for the tuned resolution/keyboard settings.
 

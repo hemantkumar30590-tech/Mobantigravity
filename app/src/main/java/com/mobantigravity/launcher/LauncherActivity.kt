@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -15,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -33,7 +35,6 @@ class LauncherActivity : Activity() {
         private const val PKG_ANTIGEM = "ai.antigem"
         private const val GEM_CMD = "gem"
         private const val SETUP_CMD = "bash /sdcard/Download/MobAntigravity/setup.sh"
-        private const val DOWNLOAD_DIR = "Download/MobAntigravity"
         private const val BASE_URL =
             "https://github.com/hemantkumar30590-tech/Mobantigravity/releases/download/latest-apk/"
         private const val URL_ANTIGEM = BASE_URL + "antigem.apk"
@@ -41,6 +42,16 @@ class LauncherActivity : Activity() {
         private const val X11_FLAGS = Intent.FLAG_ACTIVITY_NEW_TASK or
             Intent.FLAG_ACTIVITY_CLEAR_TOP or
             Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+
+        private const val PREFS_NAME = "mob_setup"
+        private const val KEY_STATE = "setup_state"
+        private const val KEY_PENDING_AUTOTYPE = "pending_autotype"
+        private const val KEY_COMMAND = "autotype_command"
+        private const val KEY_SETUP_DONE = "setup_done"
+        private const val STATE_NONE = "none"
+        private const val STATE_WAIT_ANTIGEM = "wait_antigem"
+        private const val STATE_WAIT_X11 = "wait_x11"
+        private const val STATE_WAIT_ACCESSIBILITY = "wait_accessibility"
     }
 
     private lateinit var scroll: ScrollView
@@ -60,7 +71,20 @@ class LauncherActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        val prefs = prefs()
+        if (prefs.getBoolean(KEY_SETUP_DONE, false)) {
+            File(filesDir, "setup_complete").writeText("done")
+            prefs.edit().putBoolean(KEY_SETUP_DONE, false).apply()
+            toast("Setup complete")
+        }
         render()
+        continueSetupFlow()
+    }
+
+    private fun prefs(): SharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
+    private fun setState(state: String) {
+        prefs().edit().putString(KEY_STATE, state).apply()
     }
 
     private fun render() {
@@ -75,9 +99,27 @@ class LauncherActivity : Activity() {
 
     private fun renderSetup() {
         addTitle("MobAntigravity")
-        addHint("One-time guided setup. Android will ask you to confirm each APK install.")
+        addHint("One-time setup. Everything is automated after the first tap.")
 
         addSpacer(20)
+
+        val state = prefs().getString(KEY_STATE, STATE_NONE) ?: STATE_NONE
+        if (state == STATE_NONE) {
+            addButton(root, "1-Tap Install & Setup", "#059669") { startOneTapSetup() }
+            addHint(
+                "Downloads both apps, opens the install prompts, extracts the scripts, " +
+                    "then auto-types the setup command into AntiGem."
+            )
+        } else {
+            addHint("Setup is in progress: ${state.replace('_', ' ')}")
+            addButton(root, "Continue / Retry setup", "#B45309") {
+                setState(STATE_NONE)
+                startOneTapSetup()
+            }
+            addHint("Return here after each Android install screen to continue automatically.")
+        }
+
+        addSpacer(24)
 
         val antiInstalled = isInstalled(PKG_ANTIGEM)
         val x11Installed = isInstalled(PKG_X11)
@@ -85,37 +127,39 @@ class LauncherActivity : Activity() {
         if (antiInstalled && x11Installed) {
             addHint("✓ AntiGem installed\n✓ Termux-X11 installed")
         } else {
-            addHint("Step 1/4: install the two required apps.")
+            addHint("Manual fallback — install the two required apps if the one-tap flow stops.")
         }
 
         addSpacer(10)
 
         if (!antiInstalled) {
-            addButton(root, "1.  Install AntiGem", "#3B82F6") {
+            addButton(root, "Install AntiGem", "#3B82F6") {
                 downloadAndInstall("antigem.apk", URL_ANTIGEM)
             }
-            addHint("Bundled APK. Tap Install / Allow unknown apps when Android asks.")
-            addSpacer(10)
+            addSpacer(8)
         }
 
         if (!x11Installed) {
-            addButton(root, "2.  Install Termux-X11", "#8B5CF6") {
+            addButton(root, "Install Termux-X11", "#8B5CF6") {
                 downloadAndInstall("x11.apk", URL_X11)
             }
-            addHint("Bundled APK. This provides the X11 window and Gboard bridge.")
-            addSpacer(10)
+            addSpacer(8)
         }
 
-        addButton(root, "3.  Copy setup command", "#0F766E") { prepareSetupFiles() }
+        addButton(root, "Copy setup command", "#0F766E") { prepareSetupFiles() }
         addHint("Copies: $SETUP_CMD")
-        addSpacer(10)
+        addSpacer(8)
 
-        addButton(root, "4.  Open AntiGem terminal", "#374151") { openAntiGem() }
-        addHint("Paste the copied command once and press Enter. It installs PRoot, Debian and Antigravity core, then applies the mobile-tuned fixes.")
-        addSpacer(10)
+        addButton(root, "Open AntiGem terminal", "#374151") { openAntiGem() }
+        addHint("Use this only if auto-type is not available. Paste the command and press Enter.")
+        addSpacer(8)
 
-        addButton(root, "5.  I finished setup", "#16A34A") {
+        addButton(root, "I finished setup", "#16A34A") {
             if (isInstalled(PKG_ANTIGEM) && isInstalled(PKG_X11)) {
+                prefs().edit()
+                    .putBoolean(KEY_PENDING_AUTOTYPE, false)
+                    .putString(KEY_STATE, STATE_NONE)
+                    .apply()
                 File(filesDir, "setup_complete").writeText("done")
                 toast("Setup marked complete")
                 render()
@@ -126,8 +170,8 @@ class LauncherActivity : Activity() {
 
         addSpacer(24)
         addNote(
-            "After this one-time setup, the launcher opens Antigravity directly. " +
-                "Android does not allow silent installation of other apps, so the two install confirmations are unavoidable."
+            "Android must show its own install confirmation for each APK. " +
+                "Accessibility is used only to type the one-time setup command into AntiGem."
         )
     }
 
@@ -152,9 +196,125 @@ class LauncherActivity : Activity() {
 
         addButton(root, "Re-run setup", "#B45309") {
             File(filesDir, "setup_complete").delete()
+            prefs().edit()
+                .putString(KEY_STATE, STATE_NONE)
+                .putBoolean(KEY_PENDING_AUTOTYPE, false)
+                .apply()
             toast("Setup screen enabled")
             render()
         }
+    }
+
+    private fun startOneTapSetup() {
+        prefs().edit()
+            .putString(KEY_STATE, STATE_WAIT_ANTIGEM)
+            .putBoolean(KEY_PENDING_AUTOTYPE, true)
+            .putString(KEY_COMMAND, SETUP_CMD)
+            .apply()
+        toast("Downloading installers...")
+        Thread {
+            try {
+                val antiApk = downloadApk("antigem.apk", URL_ANTIGEM)
+                val x11Apk = downloadApk("x11.apk", URL_X11)
+                runOnUiThread { afterDownload(antiApk, x11Apk) }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    setState(STATE_NONE)
+                    toast("Download failed: ${e.message ?: "unknown error"}")
+                }
+            }
+        }.start()
+    }
+
+    private fun afterDownload(antiApk: File, x11Apk: File) {
+        when {
+            !isInstalled(PKG_ANTIGEM) -> {
+                setState(STATE_WAIT_ANTIGEM)
+                installApkFile(antiApk)
+            }
+            !isInstalled(PKG_X11) -> {
+                setState(STATE_WAIT_X11)
+                installApkFile(x11Apk)
+            }
+            else -> finishInstallPhase()
+        }
+    }
+
+    private fun continueSetupFlow() {
+        when (prefs().getString(KEY_STATE, STATE_NONE) ?: STATE_NONE) {
+            STATE_NONE -> Unit
+
+            STATE_WAIT_ANTIGEM -> {
+                if (isInstalled(PKG_ANTIGEM)) {
+                    if (!isInstalled(PKG_X11)) {
+                        val apk = File(filesDir, "apks/x11.apk")
+                        if (apk.exists()) {
+                            setState(STATE_WAIT_X11)
+                            installApkFile(apk)
+                        } else {
+                            startOneTapSetup()
+                        }
+                    } else {
+                        finishInstallPhase()
+                    }
+                } else {
+                    toast("Waiting for AntiGem install")
+                }
+            }
+
+            STATE_WAIT_X11 -> {
+                if (isInstalled(PKG_X11)) {
+                    finishInstallPhase()
+                } else {
+                    toast("Waiting for Termux-X11 install")
+                }
+            }
+
+            STATE_WAIT_ACCESSIBILITY -> {
+                if (isAccessibilityEnabled()) {
+                    setState(STATE_NONE)
+                    openAntiGem()
+                } else {
+                    toast("Enable MobAntigravity in Accessibility, or paste the command manually")
+                }
+            }
+        }
+    }
+
+    private fun finishInstallPhase() {
+        prepareSetupFiles(announce = false)
+        prefs().edit()
+            .putBoolean(KEY_PENDING_AUTOTYPE, true)
+            .putString(KEY_COMMAND, SETUP_CMD)
+            .apply()
+
+        if (isAccessibilityEnabled()) {
+            setState(STATE_NONE)
+            openAntiGem()
+        } else {
+            setState(STATE_WAIT_ACCESSIBILITY)
+            toast("Enable MobAntigravity accessibility to auto-type the command")
+            try {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e: Exception) {
+                toast("Could not open Accessibility settings")
+                setState(STATE_NONE)
+                openAntiGem()
+            }
+        }
+    }
+
+    private fun isAccessibilityEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+        val service = GemAutoTypeService::class.java
+        val component = ComponentName(this, service)
+        val full = component.flattenToString()
+        val short = "${packageName}/.${service.simpleName}"
+        return Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1 &&
+            (enabled.contains(full, true) || enabled.contains(short, true) || enabled.contains(service.simpleName, true))
     }
 
     private fun addTitle(text: String) {
@@ -218,15 +378,20 @@ class LauncherActivity : Activity() {
         false
     }
 
+    private fun downloadApk(fileName: String, url: String): File {
+        val dir = File(filesDir, "apks").apply { mkdirs() }
+        val apk = File(dir, fileName)
+        java.net.URL(url).openStream().use { input ->
+            FileOutputStream(apk).use { output -> input.copyTo(output) }
+        }
+        return apk
+    }
+
     private fun downloadAndInstall(fileName: String, url: String) {
         toast("Downloading $fileName...")
         Thread {
             try {
-                val dir = File(filesDir, "apks").apply { mkdirs() }
-                val apk = File(dir, fileName)
-                java.net.URL(url).openStream().use { input ->
-                    FileOutputStream(apk).use { output -> input.copyTo(output) }
-                }
+                val apk = downloadApk(fileName, url)
                 runOnUiThread { installApkFile(apk) }
             } catch (e: Exception) {
                 runOnUiThread { toast("Download failed: ${e.message ?: "unknown error"}") }
@@ -247,15 +412,15 @@ class LauncherActivity : Activity() {
         }
     }
 
-    private fun prepareSetupFiles() {
+    private fun prepareSetupFiles(announce: Boolean = true) {
         try {
             val scripts = assets.list("scripts")?.toList().orEmpty()
             scripts.forEach { name ->
                 copyAssetToDownloads("scripts/$name", name)
             }
             copyAssetToDownloads("setup.sh", "setup.sh")
-            copyText("setup", SETUP_CMD)
-            toast("Setup command copied — paste it in AntiGem")
+            copyText("setup", SETUP_CMD, announce)
+            if (announce) toast("Setup command copied — paste it in AntiGem")
         } catch (e: Exception) {
             toast("Copy failed: ${e.message ?: "unknown error"}")
         }
@@ -292,10 +457,10 @@ class LauncherActivity : Activity() {
         }
     }
 
-    private fun copyText(label: String, text: String) {
+    private fun copyText(label: String, text: String, announce: Boolean = true) {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         cm?.setPrimaryClip(ClipData.newPlainText(label, text))
-        toast("\"$text\" copied to clipboard")
+        if (announce) toast("\"$text\" copied to clipboard")
     }
 
     private fun openX11() {
