@@ -1,0 +1,8 @@
+{
+  "name": "MobAntigravity",
+  "description": "One-tap Kotlin launcher for Antigravity 2.0 on Android via AntiGem, Debian PRoot and Termux-X11.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,171 @@
+#!/data/user/0/ai.antigem/files/usr/bin/env python3
+"""Inject the text-field focus hook + UI tweaks into every Electron page via CDP."""
+import base64
+import json
+import os
+import socket
+import struct
+import sys
+import urllib.request
+from urllib.parse import urlparse
+
+JS = r"""
+(() => {
+  // Let the app size its own sidebar; only keep the top label un-truncated and
+  // stop the sidebar from collapsing to 0px when the soft keyboard opens.
+  const css = `
+    [data-testid="new-conversation-button"] span.truncate {
+      overflow: visible !important; text-overflow: clip !important;
+    }
+    div.flex:has([data-testid="new-conversation-button"]) {
+      visibility: visible !important;
+      overflow: visible !important;
+    }
+  `;
+  const addStyle = () => {
+    let st = document.getElementById('__gem_ui_tune');
+    if (st) { st.textContent = css; return; }
+    st = document.createElement('style');
+    st.id = '__gem_ui_tune';
+    st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+  };
+  try { addStyle(); } catch (e) { document.addEventListener('DOMContentLoaded', addStyle); }
+
+  // Keyboard aate hi app body ko scroll kar deta hai - top bar/sidebar upar chale jate hain.
+  const pinScroll = () => { if (document.body && document.body.scrollTop) document.body.scrollTop = 0; };
+  document.addEventListener('scroll', (e) => {
+    if (e.target === document.body || e.target === document.documentElement) pinScroll();
+  }, true);
+  setInterval(pinScroll, 300);
+
+  if (window.__gemImeFocusHook) return;
+  window.__gemImeFocusHook = true;
+
+  // Events from shadow DOM are retargeted at document level - inspect composedPath.
+  const detail = (e) => (e.composedPath ? e.composedPath()[0] : e.target);
+  const isText = (el) => !!el && (
+      el.isContentEditable ||
+      /^(input|textarea|select)$/i.test(el.tagName || '')
+  );
+  const ping = (on) => {
+    try {
+      fetch('http://127.0.0.1:8899/ime/' + (on ? 'on' : 'off'), { mode: 'no-cors' });
+    } catch (e) {}
+  };
+  document.addEventListener('focusin', (e) => {
+    if (isText(detail(e))) ping(true);
+  }, true);
+  document.addEventListener('mousedown', (e) => {
+    if (isText(detail(e))) setTimeout(() => ping(true), 60);
+  }, true);
+  document.addEventListener('touchstart', (e) => {
+    if (isText(detail(e))) setTimeout(() => ping(true), 60);
+  }, true);
+  document.addEventListener('focusout', () => {
+    setTimeout(() => { if (!isText(document.activeElement)) ping(false); }, 150);
+  }, true);
+})();
+"""
+
+
+def targets():
+    with urllib.request.urlopen("http://127.0.0.1:9222/json/list", timeout=5) as r:
+        return json.load(r)
+
+
+def ws_connect(url):
+    u = urlparse(url)
+    sock = socket.create_connection((u.hostname, u.port or 80), timeout=8)
+    key = base64.b64encode(os.urandom(16)).decode()
+    req = (
+        f"GET {u.path} HTTP/1.1\r\n"
+        f"Host: {u.hostname}:{u.port}\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    )
+    sock.sendall(req.encode())
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise RuntimeError("websocket handshake closed")
+        buf += chunk
+    if b"101" not in buf.split(b"\r\n")[0]:
+        raise RuntimeError(buf[:200])
+    return sock
+
+
+def send(sock, obj):
+    data = json.dumps(obj).encode()
+    mask = os.urandom(4)
+    n = len(data)
+    hdr = bytes([0x81])
+    if n < 126:
+        hdr += bytes([0x80 | n])
+    elif n < 65536:
+        hdr += bytes([0x80 | 126]) + struct.pack("!H", n)
+    else:
+        hdr += bytes([0x80 | 127]) + struct.pack("!Q", n)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+    sock.sendall(hdr + mask + masked)
+
+
+def recv(sock):
+    def exact(n):
+        out = b""
+        while len(out) < n:
+            chunk = sock.recv(n - len(out))
+            if not chunk:
+                raise EOFError()
+            out += chunk
+        return out
+
+    head = exact(2)
+    n = head[1] & 0x7F
+    if n == 126:
+        n = struct.unpack("!H", exact(2))[0]
+    elif n == 127:
+        n = struct.unpack("!Q", exact(8))[0]
+    return json.loads(exact(n))
+
+
+def call(sock, ident, method, params=None):
+    send(sock, {"id": ident, "method": method, "params": params or {}})
+    while True:
+        msg = recv(sock)
+        if msg.get("id") == ident:
+            return msg
+
+
+try:
+    pages = [t for t in targets() if t.get("type") == "page"]
+    if not pages:
+        raise StopIteration()
+    main_page = next(
+        (t for t in pages if "127.0.0.1" in t.get("url", "")),
+        pages[0],
+    )
+except StopIteration:
+    print("No page target found")
+    sys.exit(1)
+
+injected = 0
+for page in pages:
+    try:
+        sock = ws_connect(page["webSocketDebuggerUrl"])
+        call(sock, 1, "Page.enable")
+        call(sock, 2, "Page.addScriptToEvaluateOnNewDocument", {"source": JS})
+        call(sock, 3, "Runtime.evaluate", {"expression": JS})
+        sock.close()
+        injected += 1
+    except Exception:
+        pass
+
+print("new-document hook:", injected)
+if len(sys.argv) > 2 and sys.argv[1] == "--eval":
+    sock = ws_connect(main_page["webSocketDebuggerUrl"])
+    res = call(sock, 4, "Runtime.evaluate",
+               {"expression": sys.argv[2], "returnByValue": True})
+    print("eval:", json.dumps(res.get("result", {}).get("result", {})))
+    sock.close()

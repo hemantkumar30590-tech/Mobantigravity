@@ -1,0 +1,37 @@
+#!/data/data/ai.antigem/files/usr/bin/env bash
+# Smart Gboard control: opens only when a text field is focused in Antigravity.
+#   gem-ime start   - start bridge + inject focus hook
+#   gem-ime stop    - stop everything
+#   gem-ime pause   - hide keyboard for now
+#   gem-ime status  - show state
+
+case "${1:-status}" in
+    start)
+        if ! pgrep -f '^python3 .*gem-ime-server' >/dev/null 2>&1; then
+            setsid nohup gem-ime-server >/dev/null 2>&1 < /dev/null &
+        fi
+        for i in $(seq 1 20); do
+            out=$(gem-ime-inject 2>&1)
+            case "$out" in *"new-document hook"*) break ;; esac
+            sleep 1
+        done
+        echo "Smart Gboard ready (opens on text-field focus)"
+        ;;
+    stop)
+        for p in $(pgrep -f '^python3 .*gem-ime-server' 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done
+        for p in $(pgrep -f '^bash .*gem-ime-assist' 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done
+        echo "Smart Gboard stopped"
+        ;;
+    pause)
+        timeout 8 adb shell input keyevent 4 >/dev/null 2>&1 || true
+        echo "Keyboard hidden"
+        ;;
+    status)
+        if pgrep -f '^python3 .*gem-ime-server' >/dev/null 2>&1; then echo "Bridge: RUNNING"; else echo "Bridge: STOPPED"; fi
+        if pgrep -f '^bash .*gem-ime-assist' >/dev/null 2>&1; then echo "Legacy assistant: RUNNING (stop it)"; fi
+        timeout 8 adb shell 'dumpsys input_method | grep -m1 -o "mInputShown=[a-z]*"' 2>/dev/null || true
+        ;;
+    *)
+        echo "Usage: gem-ime [start|stop|pause|status]"
+        ;;
+esac
