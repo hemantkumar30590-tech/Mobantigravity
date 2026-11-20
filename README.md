@@ -11,10 +11,10 @@ Android does not allow an app to silently install another app or execute shell c
 - `app/` — Kotlin Android launcher with first-run setup wizard (`com.mobantigravity.launcher`)
 - GitHub Release assets `antigem.apk` and `x11.apk` — downloaded by the guided installer at runtime
 - `app/src/main/assets/scripts/` — tested runtime scripts extracted to `Download/MobAntigravity/`:
-  - `gem` — starts X11, Antigravity and the smart keyboard bridge
+  - `gem` — starts X11, Antigravity with auto-detected GPU acceleration (Turnip+Zink on Adreno / llvmpipe software fallback), and smart keyboard bridge
   - `gem-ime` / `gem-ime-server` / `gem-ime-inject` — keyboard-on-focus bridge and CDP UI injection
   - `patch_va39.py` — VA39 ARM64 binary patcher
-- `app/src/main/assets/setup.sh` — one-command PRoot/Debian/Antigravity installer
+- `app/src/main/assets/setup.sh` — one-command PRoot/Debian/Antigravity installer with dynamic GPU acceleration config
 - `.github/workflows/build-apk.yml` — GitHub Action that builds and publishes a debug APK
 
 ## Download

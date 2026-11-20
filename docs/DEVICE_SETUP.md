@@ -41,6 +41,20 @@ am broadcast -a $P -n "$R" --es adjustHeightForEK false
 
 At scale `2`, the CSS viewport is `540px`, which lets the sidebar stay about `215px` while the chat input remains visible (`~258px`).
 
+## GPU acceleration & software fallback
+
+MobAntigravity automatically selects the best GPU rendering pipeline for the phone:
+
+1. **Hardware Acceleration (Turnip + Zink)**:
+   - Activated automatically on Qualcomm Snapdragon devices with Adreno GPU via the native KGSL driver (`/dev/kgsl-3d0`).
+   - Uses Mesa Zink (OpenGL over Vulkan) + Turnip driver for hardware-accelerated 2D canvas and WebGL rendering.
+2. **Software Fallback (llvmpipe + SwiftShader WebGL)**:
+   - Activated automatically on MediaTek (Mali), Exynos, Tensor, or if `/dev/kgsl-3d0` is not accessible.
+   - Also acts as a 4-second instant auto-recovery fallback if Turnip + Zink encounters driver-level crashes.
+3. **Manual Overrides**:
+   - Force hardware acceleration: `gem --gpu`
+   - Force software rendering: `gem --software`
+
 ## Keyboard bridge
 
 `gem-ime-inject` hooks text-field focus in every CDP page and calls `127.0.0.1:8899/ime/on`. `gem-ime-server` toggles Gboard with `input keyevent 4`, but only when X11 has focus and with a 1-second debounce, so repeated focus events cannot close the X11 activity.
