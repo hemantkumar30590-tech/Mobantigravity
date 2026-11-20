@@ -30,34 +30,48 @@ chmod +x "$PREFIX/bin/gem" "$PREFIX/bin/gem-ime" "$PREFIX/bin/gem-ime-inject" \
 RUNSH="$PREFIX/var/lib/proot-distro/containers/debian/rootfs/opt/antigravity/run.sh"
 if [ -f "$RUNSH" ]; then
     sed -i 's/force-device-scale-factor=[0-9.]*/force-device-scale-factor=2/g' "$RUNSH"
-    python3 - <<PY
+    python3 - "$RUNSH" <<'PY'
+import sys
 from pathlib import Path
-p = Path(r"$RUNSH")
+
+p = Path(sys.argv[1])
 s = p.read_text()
-old = '''# Hardware Acceleration Flags (Native Zink + Turnip KGSL)
-export GALLIUM_DRIVER=zink
-export MESA_LOADER_DRIVER_OVERRIDE=zink
-export TU_DEBUG=sysmem,noconform
-export ZINK_DESCRIPTORS=lazy
-export MESA_VK_WSI_PRESENT_MODE=mailbox
-export MESA_VK_IGNORE_EXTENSIONS="VK_EXT_calibrated_timestamps VK_KHR_calibrated_timestamps"
-export MESA_GL_VERSION_OVERRIDE=4.6COMPAT
-export MESA_GLES_VERSION_OVERRIDE=3.2
-export MESA_GLTHREAD=true
+
+# 1) Replace old Zink/Turnip GPU block if present
+old = """export MESA_SHADER_CACHE_DIR=/sdcard/.gem/mesa_shader_cache
+export MESA_DISK_CACHE_SINGLE_FILE=1
+export __GL_SHADER_DISK_CACHE_PATH=/sdcard/.gem/mesa_shader_cache
+export __GL_SHADER_DISK_CACHE=1
 export vblank_mode=0
-GPU_ARGS="--ignore-gpu-blocklist --disable-vulkan --enable-gpu-rasterization --enable-oop-rasterization --canvas-oop-rasterization --gpu-rasterization-msaa-sample-count=0 --enable-zero-copy --use-gl=angle --enable-webgl --enable-accelerated-2d-canvas --num-raster-threads=8 --start-maximized --disable-gpu-sandbox --force-device-scale-factor=2 --enable-smooth-scrolling --password-store=gnome-libsecret"'''
-new = '''# WebGL: software SwiftShader via ANGLE (reliable in PRoot/X11)
+GPU_ARGS="--ignore-gpu-blocklist --enable-gpu-rasterization --enable-unsafe-swiftshader --use-gl=angle --use-angle=vulkan --enable-features=Vulkan --disable-vulkan-surface --enable-webgl --enable-accelerated-2d-canvas --disable-gpu-sandbox --no-sandbox --force-device-scale-factor=2 --enable-smooth-scrolling --password-store=gnome-libsecret\""""
+new = """export MESA_SHADER_CACHE_DIR=/sdcard/.gem/mesa_shader_cache
+export MESA_DISK_CACHE_SINGLE_FILE=1
+export __GL_SHADER_DISK_CACHE_PATH=/sdcard/.gem/mesa_shader_cache
+export __GL_SHADER_DISK_CACHE=1
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
+export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
 export MESA_GL_VERSION_OVERRIDE=4.5
 export MESA_GLES_VERSION_OVERRIDE=3.2
+export VK_ICD_FILENAMES=/opt/antigravity/vk_swiftshader_icd.json
 export vblank_mode=0
-GPU_ARGS="--ignore-gpu-blocklist --enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader-webgl --enable-webgl --enable-accelerated-2d-canvas --disable-gpu-sandbox --no-sandbox --force-device-scale-factor=2 --enable-smooth-scrolling --password-store=gnome-libsecret"'''
+GPU_ARGS="--ignore-gpu-blocklist --enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader --enable-webgl --enable-accelerated-2d-canvas --disable-gpu-sandbox --in-process-gpu --no-sandbox --force-device-scale-factor=2 --enable-smooth-scrolling --password-store=gnome-libsecret\""""
 if old in s:
-    p.write_text(s.replace(old, new))
+    s = s.replace(old, new)
+
+# 2) Upgrade earlier/broken SwiftShader patch variants to working config
+if ("swiftshader-webgl" in s
+    or ("--use-angle=swiftshader" in s and "--in-process-gpu" not in s)
+    or ("GPU_ARGS=" in s and "VK_ICD_FILENAMES" not in s and "swiftshader" in s)):
+    s = s.replace("--use-angle=swiftshader-webgl", "--use-angle=swiftshader")
+    if "VK_ICD_FILENAMES=/opt/antigravity/vk_swiftshader_icd.json" not in s and "export vblank_mode=0" in s:
+        s = s.replace("export vblank_mode=0",
+                      "export VK_ICD_FILENAMES=/opt/antigravity/vk_swiftshader_icd.json\nexport vblank_mode=0", 1)
+    if "--in-process-gpu" not in s and "--use-angle=swiftshader" in s:
+        s = s.replace("--disable-gpu-sandbox", "--disable-gpu-sandbox --in-process-gpu")
+
+p.write_text(s)
 PY
-    sed -i 's/--use-angle=swiftshader[^ "]*"/--use-angle=swiftshader-webgl/g' "$RUNSH"
-    sed -i 's/ --in-process-gpu//g' "$RUNSH"
 fi
 python3 "$PREFIX/bin/patch_va39.py" >/dev/null 2>&1 || true
 
