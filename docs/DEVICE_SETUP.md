@@ -1,5 +1,15 @@
 # Device setup (tuned profile)
 
+## First-run wizard
+
+The APK now bundles `AntiGem` and `Termux-X11` installers in `assets/apks/`. On first launch the wizard checks both packages and offers install buttons. It then extracts `setup.sh` and the helper scripts into `Download/MobAntigravity/` and copies this command:
+
+```sh
+bash /sdcard/Download/MobAntigravity/setup.sh
+```
+
+Paste it once in the AntiGem terminal. That script installs PRoot/Debian/Antigravity core, copies the fixed scripts into `$PREFIX/bin`, patches the VA39 binary and applies the tuned X11 preferences. Android only allows silent installation for system apps, so the two install confirmations are expected.
+
 These are the settings used for the tested phone (`1080x2400`, density `480`).
 
 ## X11 resolution

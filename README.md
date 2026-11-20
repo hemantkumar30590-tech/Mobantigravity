@@ -2,32 +2,37 @@
 
 One-tap Kotlin launcher for **Google Antigravity 2.0 on Android** running through **AntiGem + Debian PRoot + Termux-X11**.
 
-The app opens the X11 GUI directly and, when needed, copies the `gem` command to the clipboard so the first start can be pasted into the AntiGem terminal. Android does not allow one app to execute shell commands inside another app, so that first terminal start is intentional.
+The app includes a **guided first-run setup**: it installs the bundled AntiGem and Termux-X11 APKs with Android's normal install prompts, extracts the helper scripts and a one-command setup script to `Download/MobAntigravity`, and then walks the user through a single paste in the AntiGem terminal. After that, the launcher opens the X11 GUI directly.
+
+Android does not allow an app to silently install another app or execute shell commands inside another app's sandbox, so the two install confirmations and one pasted command are unavoidable. Everything else is automated.
 
 ## What is included
 
-- `app/` — Kotlin Android launcher (`com.mobantigravity.launcher`)
-- `scripts/` — tested runtime scripts used on the device:
+- `app/` — Kotlin Android launcher with first-run setup wizard (`com.mobantigravity.launcher`)
+- `app/src/main/assets/apks/` — bundled AntiGem and Termux-X11 APKs for the guided installer
+- `app/src/main/assets/scripts/` — tested runtime scripts extracted to `Download/MobAntigravity/`:
   - `gem` — starts X11, Antigravity and the smart keyboard bridge
   - `gem-ime` / `gem-ime-server` / `gem-ime-inject` — keyboard-on-focus bridge and CDP UI injection
   - `patch_va39.py` — VA39 ARM64 binary patcher
+- `app/src/main/assets/setup.sh` — one-command PRoot/Debian/Antigravity installer
 - `.github/workflows/build-apk.yml` — GitHub Action that builds and publishes a debug APK
 
 ## Download
 
 Latest APK: <https://github.com/hemantkumar30590-tech/Mobantigravity/releases/latest>
 
-## Device prerequisites
+## First run on a new phone
 
-1. Install **AntiGem** (`ai.antigem`) and **Termux-X11** (`ai.antigem.x11`).
-2. Install Debian PRoot and Antigravity 2.0 inside it.
-3. Copy the scripts from `scripts/` into `$PREFIX/bin/` and make them executable:
+1. Install `MobAntigravity-debug.apk`.
+2. Open it. The wizard detects missing apps and offers:
+   - **Install AntiGem** (bundled APK)
+   - **Install Termux-X11** (bundled APK)
+3. Tap **Copy setup command**, then **Open AntiGem terminal**, paste once and press Enter:
    ```sh
-   cp scripts/gem scripts/gem-ime scripts/gem-ime-inject scripts/gem-ime-server scripts/patch_va39.py "$PREFIX/bin/"
-   chmod +x "$PREFIX/bin/gem" "$PREFIX/bin/gem-ime" "$PREFIX/bin/gem-ime-inject" "$PREFIX/bin/gem-ime-server"
+   bash /sdcard/Download/MobAntigravity/setup.sh
    ```
-4. Open the app and tap **Open AntiGem terminal** once, paste `gem`, and press Enter.
-5. After that, use **Open Antigravity GUI** to jump straight into X11.
+4. Return to MobAntigravity and tap **I finished setup**.
+5. From then on, **Open Antigravity GUI** launches directly.
 
 See [docs/DEVICE_SETUP.md](docs/DEVICE_SETUP.md) for the tuned resolution/keyboard settings.
 
