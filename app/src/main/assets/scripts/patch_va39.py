@@ -1,43 +1,55 @@
+import os
 import shutil
 import struct
+import sys
 from pathlib import Path
-import os
 
-prefix = os.environ.get("PREFIX", "${PREFIX}")
-bin_path = Path(f"{prefix}/var/lib/proot-distro/containers/debian/rootfs/opt/antigravity/resources/bin/language_server")
+prefix = os.environ.get("PREFIX", "/data/user/0/ai.antigem/files/usr")
+bin_path = Path(
+    f"{prefix}/var/lib/proot-distro/containers/debian/rootfs/opt/antigravity/resources/bin/language_server"
+)
 bak_path = Path(str(bin_path) + ".bak")
+tmp_path = Path(str(bin_path) + ".tmp")
 flag_path = Path(str(bin_path) + ".patched")
 
 if not bin_path.exists():
     print("Warning: language_server not found. Skipping binary patch.")
-    exit(0)
+    sys.exit(0)
 
 # Check if already patched by looking at our mmap signature
 try:
     data = bytearray(bin_path.read_bytes())
-    if data.count(struct.pack("<I", 0xD2C00409)) > 0 and data.count(struct.pack("<I", 0xD2C20009)) == 0:
-        print("   \033[1;32m✓\033[0m  VA39 binary patch already applied.")
+    if (
+        data.count(struct.pack("<I", 0xD2C00409)) > 0
+        and data.count(struct.pack("<I", 0xD2C20009)) == 0
+    ):
+        print("  \033[1;32m✓\033[0m  VA39 binary patch already applied.")
         flag_path.touch()
-        exit(0)
+        sys.exit(0)
 except Exception as e:
     print(f"Error reading {bin_path}: {e}")
-    exit(1)
+    sys.exit(1)
 
-print("   \033[1;36mℹ\033[0m  \033[2mUnpatched binary detected. Applying VA39 patch...\033[0m")
+print("  \033[1;36mi\033[0m  \033[2mUnpatched binary detected. Applying VA39 patch...\033[0m")
 
-# Create backup of the unpatched binary if it doesn't exist
-if not bak_path.exists():
-    shutil.copyfile(bin_path, bak_path)
-elif os.path.getmtime(bin_path) > os.path.getmtime(bak_path):
+# Create/refresh backup of the unpatched binary
+if not bak_path.exists() or os.path.getmtime(bin_path) > os.path.getmtime(bak_path):
     shutil.copyfile(bin_path, bak_path)
 
 data = bytearray(bak_path.read_bytes())
 
-def get(off): return struct.unpack_from("<I", data, off)[0]
-def put(off, word): struct.pack_into("<I", data, off, word)
+
+def get(off):
+    return struct.unpack_from("<I", data, off)[0]
+
+
+def put(off, word):
+    struct.pack_into("<I", data, off, word)
+
 
 def find_section(name_target):
-    if data[:4] != b"\x7fELF": return None, None
+    if data[:4] != b"\x7fELF":
+        return None, None
     e_shoff = struct.unpack_from("<Q", data, 40)[0]
     e_shentsize = struct.unpack_from("<H", data, 58)[0]
     e_shnum = struct.unpack_from("<H", data, 60)[0]
@@ -55,25 +67,34 @@ def find_section(name_target):
             return sh_offset, sh_offset + sh_size
     return None, None
 
+
 lo, hi = 0, len(data)
 sec_lo, sec_hi = find_section("google_malloc")
-if sec_lo is not None: lo, hi = sec_lo, sec_hi
+if sec_lo is not None:
+    lo, hi = sec_lo, sec_hi
 else:
     sec_lo, sec_hi = find_section(".text")
-    if sec_lo is not None: lo, hi = sec_lo, sec_hi
+    if sec_lo is not None:
+        lo, hi = sec_lo, sec_hi
 
 word_rewrites = {
-    0xD2C20009: 0xD2C00409, 0xD2C2000A: 0xD2C0040A,
-    0xF2C20008: 0xF2DFF408, 0xF2C20009: 0xF2DFF409,
-    0xD2C10009: 0xD2C00209, 0xD2C1000A: 0xD2C0020A,
-    0xF2C38008: 0xF2DFF708, 0xF2C38009: 0xF2DFF709,
-    0x92560A6C: 0x925D0A6C, 0x92560A6A: 0x925D0A6A,
-    0xD2C3000D: 0xD2C0060D, 0xD2C3000C: 0xD2C0060C,
+    0xD2C20009: 0xD2C00409,
+    0xD2C2000A: 0xD2C0040A,
+    0xF2C20008: 0xF2DFF408,
+    0xF2C20009: 0xF2DFF409,
+    0xD2C10009: 0xD2C00209,
+    0xD2C1000A: 0xD2C0020A,
+    0xF2C38008: 0xF2DFF708,
+    0xF2C38009: 0xF2DFF709,
+    0x92560A6C: 0x925D0A6C,
+    0x92560A6A: 0x925D0A6A,
+    0xD2C3000D: 0xD2C0060D,
+    0xD2C3000C: 0xD2C0060C,
     0xD2C08008: 0xD2C00108,
 }
 
 ubfx_count = lsl_count = mask_count = mmap_count = tags_count = 0
-for off in range(lo, hi, 4):
+for off in range(lo, hi - 3, 4):
     w = get(off)
     if (w & 0x7F800000) == 0x53000000:
         immr = (w >> 16) & 0x3F
@@ -95,9 +116,20 @@ for off in range(lo, hi, 4):
         put(off, word_rewrites[w])
         tags_count += 1
 
-bin_path.write_bytes(data)
-bin_path.chmod(0o755)
+total = ubfx_count + lsl_count + mask_count + mmap_count + tags_count
+if total == 0:
+    print(
+        "  \033[1;33m!\033[0m  No VA39 instructions matched (upstream binary may have changed). Keeping original binary intact."
+    )
+    sys.exit(0)
+
+# Atomic write so an interrupted run never corrupts language_server
+tmp_path.write_bytes(data)
+tmp_path.chmod(0o755)
+os.replace(tmp_path, bin_path)
 flag_path.touch()
 
-print(f"   \033[1;36mℹ\033[0m  \033[2mPatches applied: UBFX={ubfx_count}, LSL={lsl_count}, MASK={mask_count}, MMAP={mmap_count}, TAGS={tags_count}\033[0m")
-print("   \033[1;32m✓\033[0m  Native VA39 Binary Patch applied successfully.")
+print(
+    f"  \033[1;36mi\033[0m  \033[2mPatches applied: UBFX={ubfx_count}, LSL={lsl_count}, MASK={mask_count}, MMAP={mmap_count}, TAGS={tags_count}\033[0m"
+)
+print("  \033[1;32m✓\033[0m  Native VA39 Binary Patch verified and applied successfully.")

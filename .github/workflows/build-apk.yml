@@ -16,6 +16,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate Shell and Python scripts
+        run: |
+          bash -n app/src/main/assets/setup.sh
+          bash -n app/src/main/assets/sync-scripts.sh
+          bash -n app/src/main/assets/scripts/gem
+          python3 -m py_compile app/src/main/assets/scripts/patch_va39.py
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -64,11 +71,13 @@ jobs:
           tag_name: latest-apk
           name: MobAntigravity (Latest APK)
           body: |
-            One-tap Kotlin launcher for Antigravity 2.0 on Android via AntiGem/PRoot/X11.
+            One-tap Kotlin launcher for Antigravity 2.0 on Android (v1.4.0 – Oppo A79 5G & Mali tuned).
 
-            - 1-tap guided setup downloads and installs AntiGem + Termux-X11
-            - Auto-types the one-time setup command via Accessibility
-            - Detects "Setup complete" and opens the X11 GUI directly
+            - Dynamic WindowInsets display resolution & DPI auto-detection
+            - MediaTek Mali-G57 thermal/thread limiting (LP_NUM_THREADS=4) & RAM cap (NODE_OPTIONS + MALLOC_ARENA_MAX=2)
+            - Foreground keep-alive service + ColorOS Battery & Restricted Settings shortcuts
+            - Fast 2-second script sync without reinstalling Debian PRoot
+            - Atomic VA39 binary patcher with verification
             - Built by GitHub Actions from this repository
           files: MobAntigravity-debug.apk
           make_latest: true

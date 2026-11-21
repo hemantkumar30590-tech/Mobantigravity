@@ -14,6 +14,7 @@ import android.widget.Toast
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.ArrayDeque
@@ -25,11 +26,11 @@ class GemAutoTypeService : AccessibilityService() {
         const val KEY_PENDING_AUTOTYPE = "pending_autotype"
         const val KEY_COMMAND = "autotype_command"
         const val KEY_SETUP_DONE = "setup_done"
+        const val BRIDGE_PORT = 8898
         private const val TARGET_PACKAGE = "ai.antigem"
         private const val X11_PACKAGE = "ai.antigem.x11"
         private const val SETUP_CMD = "bash /sdcard/Download/MobAntigravity/setup.sh"
         private const val ACTION_IME = "com.mobantigravity.launcher.ACTION_IME"
-        private const val BRIDGE_PORT = 8898
     }
 
     private var lastAttempt = 0L
@@ -38,6 +39,7 @@ class GemAutoTypeService : AccessibilityService() {
     @Volatile private var isImeShown: Boolean = false
     @Volatile private var isX11Focused: Boolean = false
     @Volatile private var lastToggleTime: Long = 0L
+    @Volatile private var serviceRunning: Boolean = false
 
     private var serverSocket: ServerSocket? = null
     private var serverThread: Thread? = null
@@ -45,15 +47,19 @@ class GemAutoTypeService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        serviceRunning = true
+        GemKeepAliveService.start(applicationContext)
         startLocalServer()
         registerImeReceiver()
         inspect()
     }
 
     override fun onDestroy() {
+        serviceRunning = false
         super.onDestroy()
         stopLocalServer()
         unregisterImeReceiver()
+        GemKeepAliveService.stop(applicationContext)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -101,7 +107,7 @@ class GemAutoTypeService : AccessibilityService() {
 
     private fun unregisterImeReceiver() {
         imeReceiver?.let {
-            try { unregisterReceiver(it) } catch (e: Exception) {}
+            try { unregisterReceiver(it) } catch (_: Exception) {}
             imeReceiver = null
         }
     }
@@ -110,22 +116,25 @@ class GemAutoTypeService : AccessibilityService() {
     fun handleImeAction(action: String): Pair<String, String> {
         checkImeState()
         val now = System.currentTimeMillis()
-        if (now - lastToggleTime < 500L) {
-            return "200 OK" to "{\"ok\":true,\"debounced\":true,\"imeShown\":$isImeShown}"
+        if (action.lowercase() != "state" && action.lowercase() != "health" && now - lastToggleTime < 450L) {
+            return "200 OK" to "{"ok":true,"debounced":true,"imeShown":$isImeShown}"
         }
 
         return when (action.lowercase()) {
+            "health" -> {
+                "200 OK" to "{"ok":true,"bridge":"alive","port":$BRIDGE_PORT,"x11Focused":$isX11Focused}"
+            }
             "state" -> {
-                "200 OK" to "{\"ok\":true,\"imeShown\":$isImeShown,\"x11Focused\":$isX11Focused,\"package\":\"$currentPackage\"}"
+                "200 OK" to "{"ok":true,"imeShown":$isImeShown,"x11Focused":$isX11Focused,"package":"$currentPackage"}"
             }
             "on" -> {
                 if (isX11Focused && !isImeShown) {
                     lastToggleTime = now
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     isImeShown = true
-                    "200 OK" to "{\"ok\":true,\"action\":\"shown\",\"imeShown\":true}"
+                    "200 OK" to "{"ok":true,"action":"shown","imeShown":true}"
                 } else {
-                    "200 OK" to "{\"ok\":true,\"action\":\"none\",\"imeShown\":$isImeShown}"
+                    "200 OK" to "{"ok":true,"action":"none","imeShown":$isImeShown}"
                 }
             }
             "off" -> {
@@ -133,34 +142,44 @@ class GemAutoTypeService : AccessibilityService() {
                     lastToggleTime = now
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     isImeShown = false
-                    "200 OK" to "{\"ok\":true,\"action\":\"hidden\",\"imeShown\":false}"
+                    "200 OK" to "{"ok":true,"action":"hidden","imeShown":false}"
                 } else {
-                    "200 OK" to "{\"ok\":true,\"action\":\"none\",\"imeShown\":$isImeShown}"
+                    "200 OK" to "{"ok":true,"action":"none","imeShown":$isImeShown}"
                 }
             }
             "toggle", "back" -> {
                 lastToggleTime = now
                 performGlobalAction(GLOBAL_ACTION_BACK)
-                "200 OK" to "{\"ok\":true,\"action\":\"toggled\"}"
+                "200 OK" to "{"ok":true,"action":"toggled"}"
             }
             else -> {
-                "400 Bad Request" to "{\"ok\":false,\"error\":\"unknown action $action\"}"
+                "400 Bad Request" to "{"ok":false,"error":"unknown action $action"}"
             }
         }
     }
 
     private fun startLocalServer() {
-        if (serverSocket != null) return
+        if (serverThread?.isAlive == true) return
         serverThread = Thread {
-            try {
-                val socket = ServerSocket(BRIDGE_PORT, 20, InetAddress.getByName("127.0.0.1"))
-                serverSocket = socket
-                while (!socket.isClosed) {
-                    val client = socket.accept()
-                    handleClient(client)
+            while (serviceRunning) {
+                try {
+                    val socket = ServerSocket()
+                    socket.reuseAddress = true
+                    socket.bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), BRIDGE_PORT), 20)
+                    serverSocket = socket
+                    while (serviceRunning && !socket.isClosed) {
+                        val client = socket.accept()
+                        handleClient(client)
+                    }
+                } catch (_: Exception) {
+                    // Retry bind briefly if socket was interrupted by OEM power management
+                    if (serviceRunning) {
+                        try { Thread.sleep(1500L) } catch (_: InterruptedException) { break }
+                    }
+                } finally {
+                    try { serverSocket?.close() } catch (_: Exception) {}
+                    serverSocket = null
                 }
-            } catch (e: Exception) {
-                // Server closed
             }
         }.apply {
             isDaemon = true
@@ -173,7 +192,7 @@ class GemAutoTypeService : AccessibilityService() {
         try {
             serverSocket?.close()
             serverSocket = null
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         serverThread?.interrupt()
         serverThread = null
     }
@@ -188,6 +207,7 @@ class GemAutoTypeService : AccessibilityService() {
                 val path = if (parts.size > 1) parts[1] else "/"
 
                 val action = when {
+                    path.contains("/health") -> "health"
                     path.contains("/ime/state") -> "state"
                     path.contains("/ime/on") -> "on"
                     path.contains("/ime/off") -> "off"
@@ -197,26 +217,32 @@ class GemAutoTypeService : AccessibilityService() {
                 }
 
                 val (status, body) = if (action == "unknown") {
-                    "404 Not Found" to "{\"ok\":false,\"error\":\"not found\"}"
+                    "404 Not Found" to "{"ok":false,"error":"not found"}"
                 } else {
                     handleImeAction(action)
                 }
 
                 val bodyBytes = body.toByteArray(Charsets.UTF_8)
-                val response = "HTTP/1.1 $status\r\n" +
-                    "Content-Type: application/json; charset=utf-8\r\n" +
-                    "Content-Length: ${bodyBytes.size}\r\n" +
-                    "Access-Control-Allow-Origin: *\r\n" +
-                    "Connection: close\r\n\r\n"
+                val response = "HTTP/1.1 $status
+" +
+                    "Content-Type: application/json; charset=utf-8
+" +
+                    "Content-Length: ${bodyBytes.size}
+" +
+                    "Access-Control-Allow-Origin: *
+" +
+                    "Connection: close
+
+"
 
                 val out = client.getOutputStream()
                 out.write(response.toByteArray(Charsets.UTF_8))
                 out.write(bodyBytes)
                 out.flush()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Client error
             } finally {
-                try { client.close() } catch (e: Exception) {}
+                try { client.close() } catch (_: Exception) {}
             }
         }.start()
     }
@@ -247,7 +273,8 @@ class GemAutoTypeService : AccessibilityService() {
         lastAttempt = now
 
         val input = findInput(root) ?: return
-        val command = (prefs.getString(KEY_COMMAND, SETUP_CMD) ?: SETUP_CMD) + "\n"
+        val command = (prefs.getString(KEY_COMMAND, SETUP_CMD) ?: SETUP_CMD) + "
+"
         val args = Bundle().apply {
             putCharSequence(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
@@ -256,7 +283,7 @@ class GemAutoTypeService : AccessibilityService() {
         }
         if (input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
             prefs.edit().putBoolean(KEY_PENDING_AUTOTYPE, false).apply()
-            Toast.makeText(applicationContext, "Setup command sent", Toast.LENGTH_SHORT).show()
+            Toast.makeText(applicationContext, "Command sent to AntiGem", Toast.LENGTH_SHORT).show()
         }
     }
 
