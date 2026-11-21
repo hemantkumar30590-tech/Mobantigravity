@@ -117,24 +117,24 @@ class GemAutoTypeService : AccessibilityService() {
         checkImeState()
         val now = System.currentTimeMillis()
         if (action.lowercase() != "state" && action.lowercase() != "health" && now - lastToggleTime < 450L) {
-            return "200 OK" to "{"ok":true,"debounced":true,"imeShown":$isImeShown}"
+            return "200 OK" to "{\"ok\":true,\"debounced\":true,\"imeShown\":$isImeShown}"
         }
 
         return when (action.lowercase()) {
             "health" -> {
-                "200 OK" to "{"ok":true,"bridge":"alive","port":$BRIDGE_PORT,"x11Focused":$isX11Focused}"
+                "200 OK" to "{\"ok\":true,\"bridge\":\"alive\",\"port\":$BRIDGE_PORT,\"x11Focused\":$isX11Focused}"
             }
             "state" -> {
-                "200 OK" to "{"ok":true,"imeShown":$isImeShown,"x11Focused":$isX11Focused,"package":"$currentPackage"}"
+                "200 OK" to "{\"ok\":true,\"imeShown\":$isImeShown,\"x11Focused\":$isX11Focused,\"package\":\"$currentPackage\"}"
             }
             "on" -> {
                 if (isX11Focused && !isImeShown) {
                     lastToggleTime = now
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     isImeShown = true
-                    "200 OK" to "{"ok":true,"action":"shown","imeShown":true}"
+                    "200 OK" to "{\"ok\":true,\"action\":\"shown\",\"imeShown\":true}"
                 } else {
-                    "200 OK" to "{"ok":true,"action":"none","imeShown":$isImeShown}"
+                    "200 OK" to "{\"ok\":true,\"action\":\"none\",\"imeShown\":$isImeShown}"
                 }
             }
             "off" -> {
@@ -142,18 +142,18 @@ class GemAutoTypeService : AccessibilityService() {
                     lastToggleTime = now
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     isImeShown = false
-                    "200 OK" to "{"ok":true,"action":"hidden","imeShown":false}"
+                    "200 OK" to "{\"ok\":true,\"action\":\"hidden\",\"imeShown\":false}"
                 } else {
-                    "200 OK" to "{"ok":true,"action":"none","imeShown":$isImeShown}"
+                    "200 OK" to "{\"ok\":true,\"action\":\"none\",\"imeShown\":$isImeShown}"
                 }
             }
             "toggle", "back" -> {
                 lastToggleTime = now
                 performGlobalAction(GLOBAL_ACTION_BACK)
-                "200 OK" to "{"ok":true,"action":"toggled"}"
+                "200 OK" to "{\"ok\":true,\"action\":\"toggled\"}"
             }
             else -> {
-                "400 Bad Request" to "{"ok":false,"error":"unknown action $action"}"
+                "400 Bad Request" to "{\"ok\":false,\"error\":\"unknown action $action\"}"
             }
         }
     }
@@ -217,23 +217,17 @@ class GemAutoTypeService : AccessibilityService() {
                 }
 
                 val (status, body) = if (action == "unknown") {
-                    "404 Not Found" to "{"ok":false,"error":"not found"}"
+                    "404 Not Found" to "{\"ok\":false,\"error\":\"not found\"}"
                 } else {
                     handleImeAction(action)
                 }
 
                 val bodyBytes = body.toByteArray(Charsets.UTF_8)
-                val response = "HTTP/1.1 $status
-" +
-                    "Content-Type: application/json; charset=utf-8
-" +
-                    "Content-Length: ${bodyBytes.size}
-" +
-                    "Access-Control-Allow-Origin: *
-" +
-                    "Connection: close
-
-"
+                val response = "HTTP/1.1 $status\r\n" +
+                    "Content-Type: application/json; charset=utf-8\r\n" +
+                    "Content-Length: ${bodyBytes.size}\r\n" +
+                    "Access-Control-Allow-Origin: *\r\n" +
+                    "Connection: close\r\n\r\n"
 
                 val out = client.getOutputStream()
                 out.write(response.toByteArray(Charsets.UTF_8))
@@ -273,8 +267,7 @@ class GemAutoTypeService : AccessibilityService() {
         lastAttempt = now
 
         val input = findInput(root) ?: return
-        val command = (prefs.getString(KEY_COMMAND, SETUP_CMD) ?: SETUP_CMD) + "
-"
+        val command = (prefs.getString(KEY_COMMAND, SETUP_CMD) ?: SETUP_CMD) + "\n"
         val args = Bundle().apply {
             putCharSequence(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
